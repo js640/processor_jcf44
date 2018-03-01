@@ -20,7 +20,10 @@ module alu(data_operandA, data_operandB, ctrl_ALUopcode, ctrl_shiftamt, data_res
 	
 	mux8inputALU mux(data_result, ctrl_ALUopcode[2:0], adderOut, adderOut, andOut, orOut, leftOut, rightOut, adderOut, adderOut);
 	
-	or notEqual(isNotEqual, adderOut);
+	or notEqual(isNotEqual, adderOut[0], adderOut[1], adderOut[2], adderOut[3], adderOut[4], adderOut[5], adderOut[6], adderOut[7],
+		adderOut[8], adderOut[9], adderOut[10], adderOut[11], adderOut[12], adderOut[13], adderOut[14], adderOut[15],
+		adderOut[16], adderOut[17], adderOut[18], adderOut[19], adderOut[20], adderOut[21], adderOut[22], adderOut[23],
+		adderOut[24], adderOut[25], adderOut[26], adderOut[27], adderOut[28], adderOut[29], adderOut[30], adderOut[31]);
 	
 	and lessCheck(lessWire, ctrl_ALUopcode[0], overflow);
 	or lessThan(isLessThan, lessWire, adderOut[31]);
