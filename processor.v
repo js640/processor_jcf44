@@ -70,8 +70,16 @@ module processor(
     data_writeReg,                  // O: Data to write to for regfile
     data_readRegA,                  // I: Data from port A of regfile
     data_readRegB                   // I: Data from port B of regfile
+	 
+	 
+	 
+	 , probe
 );
     // Control signals
+	 
+	 output [31:0] probe;
+	 
+	 
     input clock, reset;
 
     // Imem
@@ -95,7 +103,6 @@ module processor(
 	 wire stall;
 	 wire flush;
 	 
-	 assign stall = 1'b0;
 	 assign flush = 1'b0;
 	 
 	 
@@ -106,7 +113,7 @@ module processor(
 	 
 	 assign pc_in = (branch) ? branchedPC : pcPlus1;
 	 
-	 register12bit PC (pc_out, pc_in, ~clock, ~stall, reset);
+	 register12bit PC (pc_out, pc_in, clock, ~stall, reset);
 	 
 	 assign address_imem = pc_out;
 	 assign f_insn = (flush) ? 32'h00000000 : q_imem;
@@ -119,13 +126,21 @@ module processor(
 	 wire [31:0] d_insn;
 	 wire [11:0] d_pc;
 	 
-	 registerUnit FDInsn (~clock, ~stall, reset, f_insn, d_insn);
-	 register12bit PCFD (d_pc, pc_in, ~clock, ~stall, reset);
+	 registerUnit FDInsn (clock, ~stall, reset, f_insn, d_insn);
+	 register12bit PCFD (d_pc, pc_in, clock, ~stall, reset);
 	 
 	 // D
 	 
-	 wire d_rtype;
+	 wire d_rtype, d_load, d_store, DXRARD, DXRBRD;
+	 
 	 nor isDRtype (d_rtype, d_insn[31], d_insn[30], d_insn[29], d_insn[28], d_insn[27]);
+	 assign d_load = ~d_insn[31] & d_insn[30] & ~d_insn[29] & ~d_insn[28] & ~d_insn[27];
+	 assign d_store = ~d_insn[31] & ~d_insn[30] & d_insn[29] & d_insn[28] & d_insn[27];
+	 
+	 addrCompare compA (DXRARD, ctrl_readRegA, x_insn[26:22]);
+	 addrCompare compB (DXRBRD, ctrl_readRegB, x_insn[26:22]);
+	 
+	 assign stall = (DXRARD & d_load) | (DXRBRD & ~d_store);
 	 
 	 assign ctrl_readRegA = d_insn[21:17];		//  rs
 	 assign ctrl_readRegB = (d_rtype) ? d_insn[16:12] : d_insn[26:22];		// rt or rd
@@ -134,15 +149,43 @@ module processor(
 	 
 	 // D/X
 	 
-	 wire [31:0] x_insn, x_a, x_b;
+	 wire [31:0] x_insn, d_insnIn,  x_a, x_b, readAIn, readBIn;
 	 wire [11:0] x_pc;
 	 
-	 registerUnit DXInsn (~clock, ~stall, reset, d_insn, x_insn);
-	 register12bit PCDX (x_pc, d_pc, ~clock, ~stall, reset);
-	 registerUnit DXA (~clock, ~stall, reset, data_readRegA, x_a);
-	 registerUnit DXB (~clock, ~stall, reset, data_readRegB, x_b);
+	 assign d_insnIn = (stall) ? 32'h00000000 : d_insn;
+	 assign readAIn = (stall) ? 32'h00000000 : data_readRegA;
+	 assign readBIn = (stall) ? 32'h00000000 : data_readRegB;
+	 
+	 registerUnit DXInsn (clock, 1'b1, reset, d_insnIn, x_insn);
+	 register12bit PCDX (x_pc, d_pc, clock, 1'b1, reset);			// Don't need to nop
+	 registerUnit DXA (clock, 1'b1, reset, readAIn, x_a);
+	 registerUnit DXB (clock, 1'b1, reset, readBIn, x_b);
 	 
 	 // X
+	 
+	 // Hazard catching
+	 
+	 wire rtype, x_dataHazard, x_load, x_addi, x_jal, x_setx, itype;
+	 
+	 nor isRtype (rtype, x_insn[31], x_insn[30], x_insn[29], x_insn[28], x_insn[27]);
+	 assign x_load = ~x_insn[31] & x_insn[30] & ~x_insn[29] & ~x_insn[28] & ~x_insn[27];// 01000
+	 assign x_addi = ~x_insn[31] & ~x_insn[30] & x_insn[29] & ~x_insn[28] & x_insn[27];// 00101
+	 assign x_jal = ~x_insn[31] & ~x_insn[30] & ~x_insn[29] & x_insn[28] & x_insn[27];// 00011
+	 assign x_setx = x_insn[31] & ~x_insn[30] & x_insn[29] & ~x_insn[28] & x_insn[27];// 10101
+	 assign itype = neORlt | x_addi | x_load | (~x_insn[31] & ~x_insn[30] & x_insn[29] & x_insn[28] & x_insn[27]);
+	 
+	 assign x_dataHazard = rtype | x_load | x_addi | x_jal | x_setx;
+	 
+	 wire XMRSRD, MWRSRD, XMRTRD, MWRTRD, XMRDRD, MWRDRD;
+	 
+	 addrCompare xmsd(XMRSRD, x_insn[21:17], m_insn[26:22]);
+	 addrCompare mwsd(MWRSRD, x_insn[21:17], w_insn[26:22]);
+	 addrCompare xmtd(XMRTRD, x_insn[16:12], m_insn[26:22]);
+	 addrCompare mwtd(MWRTRD, x_insn[16:12], w_insn[26:22]);
+	 addrCompare xmdd(XMRDRD, x_insn[26:22], m_insn[26:22]);
+	 addrCompare mwdd(MWRDRD, x_insn[26:22], w_insn[26:22]);
+	 
+	 
 	 
 	 wire [31:0] alu_out, alu_inB, alu_inA, alu_inBTemp;
 	 wire [4:0] alu_op, alu_shiftAmt, alu_opTemp;
@@ -160,17 +203,24 @@ module processor(
 	 assign alu_opTemp = (neORlt) ? 5'b00001 : 5'b0;	// Sub if bne or blt
 	 assign alu_op = (rtype) ? x_insn[6:2] : alu_opTemp;
     
+		
+		
+	 wire [31:0] mw_aBypass, xm_aBypass;
 	 
-	 wire rtype;
+	 assign mw_aBypass = (w_dataHazard & (((rtype | itype) & MWRSRD) | (neORlt & MWRDRD))) ? data_writeReg : alu_inA;
+	 assign xm_aBypass = (m_dataHazard & (((rtype | itype) & XMRSRD) | (neORlt & XMRDRD))) ? m_o : mw_aBypass;
 	 
-	 nor isRtype (rtype, x_insn[31], x_insn[30], x_insn[29], x_insn[28], x_insn[27]);
+	 wire [31:0] mw_bBypass, xm_bBypass;
+	 
+	 assign mw_bBypass = (w_dataHazard & (((rtype | itype) & MWRTRD) | (neORlt & MWRSRD))) ? data_writeReg : alu_inB;
+	 assign xm_bBypass = (m_dataHazard & (((rtype | itype) & XMRTRD) | (neORlt & XMRSRD))) ? m_o : mw_bBypass;
 	 
 	 assign alu_inBTemp = (rtype) ? x_b : immediate;
 	 assign alu_inB = (neORlt) ? x_a : alu_inBTemp;		// rs if R type, immediate if I, rd if bne or blt
 	 assign alu_inA = (neORlt) ? x_b : x_a;
 	 
-	 alu aluModule(alu_inA, 				// I
-					   alu_inB, 		// I
+	 alu aluModule(xm_aBypass, 	// I		Includes mw bypass, but prefers xm hazards 
+					   xm_bBypass,		// I
 						alu_op,	 		// I
 						alu_shiftAmt, 	// I
 						alu_out, 		// O
@@ -207,10 +257,12 @@ module processor(
 	 // X/M
 	 
 	 wire [31:0] m_o, m_insn, m_b;
+	 wire m_dataHazard;
 	 
-	 registerUnit XMInsn (~clock, ~stall, reset, x_insn, m_insn);
-	 registerUnit XMOut (~clock, ~stall, reset, alu_out, m_o);
-	 registerUnit XMB   (~clock, ~stall, reset, x_b, m_b);
+	 registerUnit XMInsn (clock, 1'b1, reset, x_insn, m_insn);
+	 registerUnit XMOut (clock, 1'b1, reset, alu_out, m_o);
+	 registerUnit XMB   (clock, 1'b1, reset, xm_bBypass, m_b);
+	 dflipflopReg nam1(m_dataHazard, x_dataHazard, clock, 1'b1, reset);
 	 
 	 
 	 // M
@@ -225,32 +277,36 @@ module processor(
     //wren,            
     //q_dmem,           
 	 
+	 assign probe = data_writeReg;
 	 
-	 assign address_dmem = m_o[11:0];
+	 assign address_dmem = alu_out[11:0];
 	 assign wren = store;
 	 assign data = m_b;
 	 
 	 // M/W
 	 
 	 wire [31:0] w_o, w_insn, w_read;
+	 wire w_dataHazard;
 	 
-	 registerUnit MWInsn (~clock, ~stall, reset, m_insn, w_insn);
-	 registerUnit MWOut (~clock, ~stall, reset, m_o, w_o);
-	 registerUnit MWRead(~clock, ~stall, reset, q_dmem, w_read);
+	 
+	 registerUnit MWInsn (clock, 1'b1, reset, m_insn, w_insn);
+	 registerUnit MWOut (clock, 1'b1, reset, m_o, w_o);
+	 registerUnit MWRead(clock, 1'b1, reset, q_dmem, w_read);		//?
+	 dflipflopReg nam2(w_dataHazard, m_dataHazard, clock, 1'b1, reset);
 	 
 	 // W
 	 
 			// ctrl_writeReg, ctrl_writeEn, data_writeReg
 			
-	 wire load, w_rtype, w_addi;
+	 wire w_load, w_rtype, w_addi;
 	 
-	 assign load = ~w_insn[31] & w_insn[30] & ~w_insn[29] & ~w_insn[28] & ~w_insn[27];// 01000
+	 assign w_load = ~w_insn[31] & w_insn[30] & ~w_insn[29] & ~w_insn[28] & ~w_insn[27];// 01000
 	 assign w_rtype = ~w_insn[31] & ~w_insn[30] & ~w_insn[29] & ~w_insn[28] & ~w_insn[27];// 00000
 	 assign w_addi = ~w_insn[31] & ~w_insn[30] & w_insn[29] & ~w_insn[28] & w_insn[27];// 00101
 			
-	 assign ctrl_writeEnable = load | w_rtype | w_addi;
+	 assign ctrl_writeEnable = w_load | w_rtype | w_addi;
 	 assign ctrl_writeReg = w_insn[26:22];
-	 assign data_writeReg = (load) ? w_read : w_o;
+	 assign data_writeReg = (w_load) ? w_read : w_o;
 	 
 	 
 
@@ -309,4 +365,21 @@ module branchAdder(out, pc, n);
 	
 	assign out = tempout[11:0];
 	
+endmodule
+
+
+module addrCompare(out, inA, inB);
+	output out;
+	input[4:0] inA, inB;
+	
+	wire [4:0] temp;
+	wire isZero;
+	
+	xnor xnors [4:0] (temp, inA, inB);
+	
+	assign isZero = ~inA[0] & ~inA[1] & ~inA[2] & ~inA[3] & ~inA[4];
+	
+	assign out = temp[0] & temp[1] & temp[2] & temp[3] & temp[4] & ~isZero;
+
+
 endmodule

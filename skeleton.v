@@ -14,7 +14,9 @@ module skeleton(clock, reset,        regVal /* TEST */);
 	
 	 output [31:0] regVal; 	// TEST
 	
-	 assign regVal = data_writeReg;
+	 wire [31:0] probe;
+	
+	 assign regVal = probe;
 	
     /** IMEM **/
     // Figure out how to generate a Quartus syncram component and commit the generated verilog file.
@@ -85,6 +87,9 @@ module skeleton(clock, reset,        regVal /* TEST */);
         data_writeReg,                  // O: Data to write to for regfile
         data_readRegA,                  // I: Data from port A of regfile
         data_readRegB                   // I: Data from port B of regfile
+		  
+		  
+		  , probe
     );
 
 endmodule
