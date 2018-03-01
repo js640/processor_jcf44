@@ -90,6 +90,216 @@ module processor(
     output [31:0] data_writeReg;
     input [31:0] data_readRegA, data_readRegB;
 
-    /* YOUR CODE STARTS HERE */
+	 
+	 
+	 wire stall;
+	 wire flush;
+	 
+	 assign stall = 1'b0;
+	 assign flush = 1'b0;
+	 
+	 
+	 // FETCH
+	 
+	 wire [31:0] f_insn;
+	 wire [11:0] pc_out, pc_in, pcPlus1;
+	 
+	 assign pc_in = (branch) ? branchedPC : pcPlus1;
+	 
+	 register12bit PC (pc_out, pc_in, ~clock, ~stall, reset);
+	 
+	 assign address_imem = pc_out;
+	 assign f_insn = q_imem;
+	 
+	 incrementBy1 incrementer(pcPlus1, pc_out, 1'b1);
+	 
+	 
+	 // F/D
+	 
+	 wire [31:0] d_insn;
+	 wire [11:0] d_pc;
+	 
+	 registerUnit FDInsn (~clock, ~stall, reset | flush, f_insn, d_insn);
+	 register12bit PCFD (d_pc, pc_in, ~clock, ~stall, reset | flush);
+	 
+	 // D
+	 
+	 wire d_rtype;
+	 nor isDRtype (d_rtype, d_insn[31], d_insn[30], d_insn[29], d_insn[28], d_insn[27]);
+	 
+	 assign ctrl_readRegA = d_insn[21:17];		//data_readRegA
+	 assign ctrl_readRegB = (d_rtype) ? d_insn[16:12] : d_insn[26:22];		//data_readRegB
+	 
+	 // D/X
+	 
+	 wire [31:0] x_insn, x_a, x_b;
+	 wire [11:0] x_pc;
+	 
+	 registerUnit DXInsn (~clock, ~stall, reset, d_insn, x_insn);
+	 register12bit PCDX (x_pc, f_pc, ~clock, ~stall, reset);
+	 registerUnit DXA (~clock, ~stall, reset, data_readRegA, x_a);
+	 registerUnit DXB (~clock, ~stall, reset, data_readRegB, x_b);
+	 
+	 // X
+	 
+	 wire [31:0] alu_out, alu_inB;
+	 wire [4:0] alu_op, alu_shiftAmt, alu_opTemp;
+	 wire alu_ine, alu_ilt, alu_ovf, neORlt;
+	 
+	 wire [31:0] immediate;
+	 
+	 assign immediate [31:17] = x_insn[16];
+	 assign immediate [16:0] = x_insn[16:0];
+	 
+	 assign alu_shiftAmt = (rtype) ? x_insn[11:7] : 5'b0;
+	 
+	 assign neORlt = ~x_insn[31] & ~x_insn[30] & x_insn[28] & ~x_insn[27]; // 00010 or 00110
+	 assign alu_opTemp = (neORlt) ? 5'b00001 : 5'b0;
+	 assign alu_op = (rtype) ? x_insn[6:2] : alu_opTemp;
+    
+	 
+	 wire rtype;
+	 
+	 nor isRtype (rtype, x_insn[31], x_insn[30], x_insn[29], x_insn[28], x_insn[27]);
+	 
+	 assign alu_inB = (rtype) ? x_b : immediate;
+	 
+	 alu aluModule(x_a, 				// I
+					   alu_inB, 		// I
+						alu_op,	 		// I
+						alu_shiftAmt, 	// I
+						alu_out, 		// O
+						alu_ine, 		// O
+						alu_ilt, 		// O
+						alu_ovf);		// O
+						
+						
+	 wire [31:0] mult_out; 		// For now, inA and inB are same as ALU
+	 wire mult, div, mult_exc, mult_rdy;
+						
+	 multdiv mdModule(x_a, 			// I
+							x_b, 			// I
+							mult, 		// I
+							div, 			// I
+							clock, 		// I
+							mult_out, 	// O
+							mult_exc,	// O
+							mult_rdy);	// O
+	 
+	 
+	 
+	 wire branch;
+	 
+	 assign branch = (neORlt & ~x_insn[29] & alu_ine) | (neORlt & x_insn[29] & alu_ilt);
+	 
+	 //assign flush = branch; // ASSUME NOT TAKEN
+	 
+	 wire [11:0] branchedPC;
+	 
+	 branchAdder bAdd (branchedPC, x_pc, x_insn[16:0]);
+	 
+	 
+	 // X/M
+	 
+	 wire [31:0] m_o, m_insn, m_b;
+	 
+	 registerUnit XMInsn (~clock, ~stall, reset, x_insn, m_insn);
+	 registerUnit XMOut (~clock, ~stall, reset, alu_out, m_o);
+	 registerUnit XMB   (~clock, ~stall, reset, x_b, m_b);
+	 
+	 
+	 // M
+	 
+	 // Something with dmem
+	 
+	 wire store;
+	 
+	 assign store = ~m_insn[31] & ~m_insn[30] & m_insn[29] &  m_insn[28] &  m_insn[27];// 00111
+	 //address_dmem,                   
+    //data,          
+    //wren,            
+    //q_dmem,           
+	 
+	 assign address_dmem = m_o;
+	 assign wren = store;
+	 assign data = m_b;
+	 
+	 
+	 // M/W
+	 
+	 wire [31:0] w_o, w_insn, w_read;
+	 
+	 registerUnit MWInsn (~clock, ~stall, reset, m_insn, w_insn);
+	 registerUnit MWOut (~clock, ~stall, reset, m_o, w_o);
+	 registerUnit MWRead(~clock, ~stall, reset, q_dmem, w_read);
+	 
+	 // W
+	 
+			// ctrl_writeReg, ctrl_writeEn, data_writeReg
+			
+	 wire load;
+	 
+	 assign load = ~m_insn[31] & m_insn[30] & ~m_insn[29] & ~m_insn[28] & ~m_insn[27];// 01000
+			
+	 assign ctrl_writeEnable = 1'b1;
+	 assign ctrl_writeReg = w_insn[26:22];
+	 assign data_writeReg = (load) ? q_dmem : w_o;
+	 
+	 
 
+endmodule
+
+
+module register12bit(q, d, clock, en, reset);
+	input [11:0] d;
+	input clock, en, reset;
+
+	output [11:0] q;
+
+	dflipflopReg flops [11:0] (q, d, clock, en, reset);
+
+endmodule
+
+module incrementBy1(out, in, en);
+	input [11:0] in;
+	output [11:0] out;
+	input en;
+	
+	wire [15:0] tempin, tempout, bin;
+	wire [1:0] G, P;
+	
+	assign tempin[15:12] = 4'b0;
+	assign tempin[11:0] = in;
+	
+	assign bin = 16'b0000000000000001;
+	
+	cla8Block cla8Block0(tempout[7:0], G[0], P[0], tempin[7:0], bin[7:0], 1'b0);
+		
+	cla8Block cla8Block1(tempout[15:8], G[1], P[1], tempin[15:8], bin[15:8], G[0]);
+	
+	assign out = (en) ? tempout[11:0] : tempin[11:0];
+
+endmodule
+
+
+module branchAdder(out, pc, n);
+	input [16:0] n;
+	input [11:0] pc;
+	output [11:0] out;
+	
+		
+	wire [15:0] tempin, tempout, bin;
+	wire [1:0] G, P;
+	
+	assign tempin[15:12] = 4'b0;
+	assign tempin[11:0] = pc;
+	
+	assign bin = n[15:0];
+	
+	cla8Block cla8Block0(tempout[7:0], G[0], P[0], tempin[7:0], bin[7:0], 1'b0);
+		
+	cla8Block cla8Block1(tempout[15:8], G[1], P[1], tempin[15:8], bin[15:8], G[0]);
+	
+	assign out = tempout[11:0];
+	
 endmodule
