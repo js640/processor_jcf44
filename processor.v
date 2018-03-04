@@ -101,9 +101,9 @@ module processor(
 	 
 	 // Test Values ----------------------
 	 
-	 assign probe = address_dmem;
-	 assign probe1 = x_b;
-	 assign probe2 = wren;
+	 assign probe = ctrl_writeEnable;
+	 assign probe1 = ctrl_writeReg;
+	 assign probe2 = data_writeReg;
 	 
 	 // -----------------------------------
 	 
@@ -120,7 +120,7 @@ module processor(
 	 // Instruction type wires
 	 wire d_btype, d_store, d_jr, d_bex, d_load, 
 			x_rtype, x_load, x_addi, x_jal, x_setx, x_itype, x_store, x_ttype, x_jr, x_bex, x_btype,
-			m_store,
+			m_store, m_load,
 			w_load, w_rtype, w_addi, w_jal, w_setx;	
 			
 	 // Instruction wires
@@ -257,8 +257,10 @@ module processor(
 	 assign x_mult = x_multTemp & ~multing;
 	 assign x_div = x_divTemp & ~multing;
 						
-	 multdiv mdModule(x_a, 			// I
-							x_b, 			// I
+	 
+						
+	 multdiv mdModule(xm_aBypass, 			// I
+							xm_bBypass, 			// I
 							x_mult, 		// I
 							x_div, 		// I
 							clock, 		// I
@@ -272,7 +274,6 @@ module processor(
 	 
 	 
 	 dflipflopReg ismulting(multing, (x_multTemp | x_divTemp) & ~mult_rdy, clock, x_multTemp | x_divTemp, reset);
-	 
 	 
 	 checkIfZeroMult check(bex_trigger, xm_aBypass);
 	 
@@ -371,6 +372,7 @@ module processor(
 	 assign x_itype 	=  x_btype | x_addi | x_load | x_store;
 	 
 	 assign m_store 	= ~m_insn[31] & ~m_insn[30] &  m_insn[29] &  m_insn[28] &  m_insn[27];// 00111 
+	 assign m_load  	= ~m_insn[31] &  m_insn[30] & ~m_insn[29] & ~m_insn[28] & ~m_insn[27];// 01000 
 
 	 assign w_load 	= ~w_insn[31] &  w_insn[30] & ~w_insn[29] & ~w_insn[28] & ~w_insn[27];// 01000
 	 assign w_rtype	= ~w_insn[31] & ~w_insn[30] & ~w_insn[29] & ~w_insn[28] & ~w_insn[27];// 00000

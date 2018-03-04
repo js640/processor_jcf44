@@ -14,6 +14,9 @@ module multdiv(data_operandA, data_operandB, ctrl_MULT, ctrl_DIV, clock, data_re
 	wire [5:0] count, countIncremented, notCount;
 	
 	
+	
+	
+	
 	// Make inputs positive for div, invert final product if necessary
 	inverter32Mult inva(inverted_a, data_operandA, data_operandA[31]);
 	inverter32Mult invb(inverted_b, data_operandB, data_operandB[31]);
