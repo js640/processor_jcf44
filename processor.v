@@ -135,7 +135,7 @@ module processor(
 	 wire [31:0] d_aFlushed, d_bFlushed, x_a, x_b, x_o, m_o, m_b, w_o, w_read;
 	 
 	 // Alu/MultDiv wires
-	 wire [31:0] alu_inA, alu_inB, immediate, alu_out, mult_out, alu_out_stall, status;
+	 wire [31:0] alu_inA, alu_inB, immediate, alu_out, mult_out, alu_out_stall, status, d_immediate, d_immediateFlushed;
 	 wire [4:0] alu_op, alu_shiftAmt;
 	 wire alu_ine, alu_ilt, alu_ovf, mult_exc, mult_rdy, x_mult, x_div, mult_stall, multing;
 	 
@@ -188,6 +188,9 @@ module processor(
 	 addrCompare compA (d_DXRARD, ctrl_readRegA, x_insn[26:22]);
 	 addrCompare compB (d_DXRBRD, ctrl_readRegB, x_insn[26:22]);
 	 
+	 assign d_immediate [31:17] = (d_insn[16]) ? 15'h7FFF : 15'h0;
+	 assign d_immediate [16:0] = d_insn[16:0];
+	 
 	 
 	 
 // D/X
@@ -195,11 +198,13 @@ module processor(
 	 assign d_insnFlushed = (stall | flush) ? 32'h00000000 : d_insn;
 	 assign d_aFlushed = (stall | flush) ? 32'h00000000 : data_readRegA;
 	 assign d_bFlushed = (stall | flush) ? 32'h00000000 : data_readRegB;
+	 assign d_immediateFlushed = (stall | flush) ? 32'h00000000 : d_immediate;
 	 
 	 registerUnit DXInsn (clock, ~mult_stall, reset, d_insnFlushed, x_insn);
 	 register12bit PCDX (x_pc, d_pc, clock, ~mult_stall, reset);			// Don't need to nop
 	 registerUnit DXA (clock, ~mult_stall, reset, d_aFlushed, x_a);
 	 registerUnit DXB (clock, ~mult_stall, reset, d_bFlushed, x_b);
+	 registerUnit DXdwq (clock, ~mult_stall, reset, d_immediateFlushed, immediate);
 	 
 	 
 	 
@@ -215,9 +220,7 @@ module processor(
 	 addrCompare xmdd(x_XMRDRD, x_insn[26:22], m_insn[26:22]);
 	 addrCompare mwdd(x_MWRDRD, x_insn[26:22], w_insn[26:22]);
 	 
-	 // Find immediates
-	 assign immediate [31:17] = (x_insn[16]) ? 15'h7FFF : 15'h0;
-	 assign immediate [16:0] = x_insn[16:0];
+	
 	 
 	 assign x_bTemp = (x_load | x_addi | x_store) ? immediate : x_b;
 
