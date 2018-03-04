@@ -29,7 +29,7 @@ module multdiv(data_operandA, data_operandB, ctrl_MULT, ctrl_DIV, clock, data_re
 	// Stores state as either multiplying (0) or dividing (1)
 	or stateEn(state_enable, ctrl_MULT, ctrl_DIV);
 	not enInv(n_enable, state_enable);
-	dflipflopMult storeState(ctrl_DIV, clock, 1'b1, 1'b1, state_enable, state);
+	dflipflopMult storeState(ctrl_DIV, ~clock, 1'b1, 1'b1, state_enable, state);
 	not nState(notState, state);
 		
 	// Exception checking
@@ -51,7 +51,7 @@ module multdiv(data_operandA, data_operandB, ctrl_MULT, ctrl_DIV, clock, data_re
 	not outRDY(data_resultRDY, count_enable);
 	nand cEnable(count_enable, notCount[0], notCount[1], notCount[2], notCount[3], notCount[4], count[5]);
 	increment6bitMult incrementer(countIncremented, count);
-	register6Mult counter(count, countIncremented, state_enable, clock, count_enable);	// Counts every step, resets at new signal
+	register6Mult counter(count, countIncremented, state_enable, ~clock, count_enable);	// Counts every step, resets at new signal
 	
 	// Allows product register to change
 	or pEnable(product_enable, count_enable, state_enable);
@@ -82,10 +82,10 @@ module multdiv(data_operandA, data_operandB, ctrl_MULT, ctrl_DIV, clock, data_re
 	or cond2(en_int_2, en_int_1, state);
 	
 	// Stores booth buffer bit in register
-	dflipflopMult bb(product_out[0], clock, n_enable, 1'b1, 1'b1, buffer_bit);
+	dflipflopMult bb(product_out[0], ~clock, n_enable, 1'b1, 1'b1, buffer_bit);
 	
 	// Product/RQB register and adder/comparator
-	register64Mult productReg(product_out, product_in, 1'b0, clock, product_enable);
+	register64Mult productReg(product_out, product_in, 1'b0, ~clock, product_enable);
 	full32AdderMult adder(adderOut, product_out[63:32], in_b, adderSub, en_int_2);
 		 
 	// Logic for greater than or equal to output of comparator

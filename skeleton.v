@@ -9,10 +9,10 @@
  * inspect which signals the processor tries to assert when.
  */
 
-module skeleton(clock, reset,        regVal /* TEST */);
+module skeleton(clock, reset,        regVal , probe1, probe2/* TEST */);
     input clock, reset;
 	
-	 output [31:0] regVal; 	// TEST
+	 output [31:0] regVal,  probe1, probe2; 	// TEST
 	
 	 wire [31:0] probe;
 	
@@ -89,7 +89,7 @@ module skeleton(clock, reset,        regVal /* TEST */);
         data_readRegB                   // I: Data from port B of regfile
 		  
 		  
-		  , probe
+		  , probe, probe1, probe2
     );
 
 endmodule
