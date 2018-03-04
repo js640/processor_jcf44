@@ -101,7 +101,7 @@ module processor(
 	 
 	 // Test Values ----------------------
 	 
-	 assign probe = immediate;
+	 assign probe = ctrl_writeEnable;
 	 assign probe1 = ctrl_writeReg;
 	 assign probe2 = data_writeReg;
 	 
@@ -129,7 +129,7 @@ module processor(
 	 // PC wires
 	 wire [31:0] pc_extend;
 	 wire [11:0] pc_in, pc_increment, branchedPC, f_pc, d_pc, x_pc, m_pc, w_pc, target, bPC;
-	 wire branch, bex_trigger;
+	 wire branch, m_branch, bex_trigger;
 	 
 	 // Output wires
 	 wire [31:0] d_aFlushed, d_bFlushed, x_a, x_b, x_o, m_o, m_b, w_o, w_read;
@@ -144,14 +144,14 @@ module processor(
 	 
 	 // Temporary wires
 	 wire [31:0] alu_inBTemp, x_bTemp, data_writeRegTemp1, data_writeRegTemp2;
-	 wire [4:0] read_bTemp, ctrl_readRegATemp, alu_opTemp, w_regTemp;
+	 wire [4:0] read_bTemp, ctrl_readRegATemp, ctrl_readRegBTemp, alu_opTemp, w_regTemp;
 	 wire  x_multTemp, x_divTemp;
 	 
 	 
 	 
 // Stall / flush logic
 	 
-	 assign flush = branch; 	// ASSUME NOT TAKEN
+	 assign flush = branch | m_branch; 	// ASSUME NOT TAKEN
 	 assign stall = x_load & (d_DXRARD | (d_DXRBRD & ~d_store));
 
 	 
@@ -170,7 +170,7 @@ module processor(
 	 
 // F/D
 	 	 
-	 assign f_insnFlushed = (flush) ? 32'h0 : f_insn;
+	 assign f_insnFlushed = (flush) ? 32'h00000000 : f_insn;
 	 
 	 registerUnit FDInsn (clock, ~stall & ~mult_stall, reset, f_insnFlushed, d_insn);
 	 register12bit PCFD (d_pc, f_pc, clock, ~stall & ~mult_stall, reset);		// was pc_in
@@ -182,7 +182,8 @@ module processor(
 	  
 	 assign ctrl_readRegATemp = (d_btype | d_jr) ? d_insn[26:22] : d_insn[21:17];
 	 assign ctrl_readRegA = (d_bex) ? 5'b11110 : ctrl_readRegATemp;
-	 assign ctrl_readRegB = (d_btype) ? d_insn[21:17] : d_insn[16:12];
+	 assign ctrl_readRegBTemp = (d_store) ? d_insn[26:22] : d_insn[16:12];
+	 assign ctrl_readRegB = (d_btype) ? d_insn[21:17] : ctrl_readRegBTemp;
 
 	 addrCompare compA (d_DXRARD, ctrl_readRegA, x_insn[26:22]);
 	 addrCompare compB (d_DXRBRD, ctrl_readRegB, x_insn[26:22]);
@@ -191,9 +192,9 @@ module processor(
 	 
 // D/X
 	 	 
-	 assign d_insnFlushed = (stall | flush) ? 32'h0 : d_insn;
-	 assign d_aFlushed = (stall | flush) ? 32'h0 : data_readRegA;
-	 assign d_bFlushed = (stall | flush) ? 32'h0 : data_readRegB;
+	 assign d_insnFlushed = (stall | flush) ? 32'h00000000 : d_insn;
+	 assign d_aFlushed = (stall | flush) ? 32'h00000000 : data_readRegA;
+	 assign d_bFlushed = (stall | flush) ? 32'h00000000 : data_readRegB;
 	 
 	 registerUnit DXInsn (clock, ~mult_stall, reset, d_insnFlushed, x_insn);
 	 register12bit PCDX (x_pc, d_pc, clock, ~mult_stall, reset);			// Don't need to nop
@@ -232,8 +233,8 @@ module processor(
 	 assign mw_aBypass = (w_dataHazard & (((x_rtype | x_itype) & x_MWRSRD) | (x_btype & x_MWRDRD))) ? data_writeReg : x_a;
 	 assign xm_aBypass = (m_dataHazard & (((x_rtype | x_itype) & x_XMRSRD) | (x_btype & x_XMRDRD))) ? m_o : mw_aBypass;
 	 	 
-	 assign mw_bBypass = (w_dataHazard & (((x_rtype | x_itype) & x_MWRTRD) | (x_btype & x_MWRSRD))) ? data_writeReg : x_bTemp;
-	 assign xm_bBypass = (m_dataHazard & (((x_rtype | x_itype) & x_XMRTRD) | (x_btype & x_XMRSRD))) ? m_o : mw_bBypass;
+	 assign mw_bBypass = (w_dataHazard & ((x_rtype & x_MWRTRD) | (x_btype & x_MWRSRD))) ? data_writeReg : x_bTemp;
+	 assign xm_bBypass = (m_dataHazard & ((x_rtype & x_XMRTRD) | (x_btype & x_XMRSRD))) ? m_o : mw_bBypass;
 	 
 	 
 	 alu aluModule(xm_aBypass, 	// I		Includes mw bypass, but prefers xm hazards 
@@ -295,16 +296,17 @@ module processor(
 	 	 
 	 registerUnit XMInsn (clock, 1'b1, reset, x_insnStall, m_insn);
 	 registerUnit XMOut (clock, 1'b1, reset, alu_out_stall, m_o);
-	 registerUnit XMB   (clock, 1'b1, reset, xm_bBypass_stall, m_b);
+	 registerUnit XMB   (clock, 1'b1, reset, x_b, m_b);
 	 dflipflopReg nam1(m_dataHazard, x_dataHazard_stall, clock, 1'b1, reset);
 	 register12bit PCDadX (m_pc, x_pc, clock, 1'b1, reset);
 	 dflipflopReg Except (m_exception, (mult_exc & mult_rdy) | (alu_ovf & (x_rtype | x_addi)), clock, 1'b1, reset);
+	 dflipflopReg Excepadt (m_branch, branch, clock, 1'b1, reset);
 	 
 	 
 	 
 // MEMORY	 
 	 
-	 assign address_dmem = alu_out[11:0];//(m_store) ? m_o[11:0] : alu_out[11:0];
+	 assign address_dmem = (m_store) ? m_o[11:0] : alu_out[11:0];
 	 assign wren = m_store;
 	 assign data = m_b;
 	 
@@ -330,7 +332,7 @@ module processor(
 	 getStatus statusGetter(status, w_exception, w_insn);
 	 
 	 	
-	 assign ctrl_writeEnable = w_load | w_rtype | w_addi | w_jal;
+	 assign ctrl_writeEnable = w_load | w_rtype | w_addi | w_jal | w_setx;
 	 assign w_regTemp = (w_setx | w_exception) ? 5'b11110 : w_insn[26:22];
 	 assign ctrl_writeReg = (w_jal) ? 5'b11111 : w_regTemp;
 	 assign data_writeRegTemp1 = (w_load) ? w_read : w_o;
