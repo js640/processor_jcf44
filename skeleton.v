@@ -9,14 +9,14 @@
  * inspect which signals the processor tries to assert when.
  */
 
-module skeleton(clock, reset,        regVal , probe1, probe2/* TEST */);
+module skeleton(clock, reset, probe);        //regVal , probe1, probe2/* TEST */);
     input clock, reset;
 	
-	 output [31:0] regVal,  probe1, probe2; 	// TEST
+	 output [31:0] probe; //,  probe1, probe2; 	// TEST
 	
-	 wire [31:0] probe;
+	 //wire [31:0] probe;
 	
-	 assign regVal = probe;
+	 //assign regVal = probe;
 	
     /** IMEM **/
     // Figure out how to generate a Quartus syncram component and commit the generated verilog file.
@@ -89,7 +89,7 @@ module skeleton(clock, reset,        regVal , probe1, probe2/* TEST */);
         data_readRegB                   // I: Data from port B of regfile
 		  
 		  
-		  , probe, probe1, probe2
+		  , probe//, probe1, probe2
     );
 
 endmodule

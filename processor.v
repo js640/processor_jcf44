@@ -73,11 +73,11 @@ module processor(
 	 
 	 
 	 
-	 , probe, probe1, probe2
+	 //, probe//, probe1, probe2
 );
     
 	 // Test signal
-	 output [31:0] probe, probe1, probe2;
+	 //output [31:0] probe;//, probe1, probe2;
 	 
 	 // Control signals
     input clock, reset;
@@ -101,9 +101,9 @@ module processor(
 	 
 	 // Test Values ----------------------
 	 
-	 assign probe = ctrl_writeEnable;
-	 assign probe1 = ctrl_writeReg;
-	 assign probe2 = data_writeReg;
+	 //assign probe = f_pc;
+	 //assign probe1 = ctrl_writeReg;
+	 //assign probe2 = data_writeReg;
 	 
 	 // -----------------------------------
 	 
@@ -120,7 +120,7 @@ module processor(
 	 // Instruction type wires
 	 wire d_btype, d_store, d_jr, d_bex, d_load, 
 			x_rtype, x_load, x_addi, x_jal, x_setx, x_itype, x_store, x_ttype, x_jr, x_bex, x_btype,
-			m_store, m_load,
+			m_store,
 			w_load, w_rtype, w_addi, w_jal, w_setx;	
 			
 	 // Instruction wires
@@ -271,23 +271,17 @@ module processor(
 	 
 	 
 	 assign mult_stall = (multing | x_multTemp | x_divTemp) & ~mult_rdy;
-	 
-	 
 	 dflipflopReg ismulting(multing, (x_multTemp | x_divTemp) & ~mult_rdy, clock, x_multTemp | x_divTemp, reset);
 	 
+	 
 	 checkIfZeroMult check(bex_trigger, xm_aBypass);
-	 
 	 assign branch = (x_btype & ~x_insn[29] & alu_ine) | (x_btype & x_insn[29] & alu_ilt) | x_ttype | x_jr | (~bex_trigger & x_bex);
-	 
 	 assign target = (x_jr) ? xm_aBypass[11:0] : x_insn[11:0];
-	 
 	 branchAdder bAdd (bPC, x_pc, x_insn[16:0]);
-	 
 	 assign branchedPC = (x_ttype | x_jr | (~bex_trigger & x_bex)) ? target : bPC;
 	 
 	 	 
 	 assign x_insnStall = (mult_stall) ? 32'h0 : x_insn;
-	 
 	 assign x_o = (multing) ? mult_out : alu_out;
 	 
 	 assign alu_out_stall = (mult_stall) ? 32'h0 : x_o;
@@ -372,7 +366,6 @@ module processor(
 	 assign x_itype 	=  x_btype | x_addi | x_load | x_store;
 	 
 	 assign m_store 	= ~m_insn[31] & ~m_insn[30] &  m_insn[29] &  m_insn[28] &  m_insn[27];// 00111 
-	 assign m_load  	= ~m_insn[31] &  m_insn[30] & ~m_insn[29] & ~m_insn[28] & ~m_insn[27];// 01000 
 
 	 assign w_load 	= ~w_insn[31] &  w_insn[30] & ~w_insn[29] & ~w_insn[28] & ~w_insn[27];// 01000
 	 assign w_rtype	= ~w_insn[31] & ~w_insn[30] & ~w_insn[29] & ~w_insn[28] & ~w_insn[27];// 00000
