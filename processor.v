@@ -101,9 +101,9 @@ module processor(
 	 
 	 // Test Values ----------------------
 	 
-	 assign probe = ctrl_writeEnable;
-	 assign probe1 = ctrl_writeReg;
-	 assign probe2 = data_writeReg;
+	 assign probe = address_dmem;
+	 assign probe1 = x_b;
+	 assign probe2 = wren;
 	 
 	 // -----------------------------------
 	 
@@ -118,7 +118,7 @@ module processor(
 			w_dataHazard, w_exception;
 	 
 	 // Instruction type wires
-	 wire d_btype, d_store, d_jr, d_bex,
+	 wire d_btype, d_store, d_jr, d_bex, d_load, 
 			x_rtype, x_load, x_addi, x_jal, x_setx, x_itype, x_store, x_ttype, x_jr, x_bex, x_btype,
 			m_store,
 			w_load, w_rtype, w_addi, w_jal, w_setx;	
@@ -152,7 +152,7 @@ module processor(
 // Stall / flush logic
 	 
 	 assign flush = branch | m_branch; 	// ASSUME NOT TAKEN
-	 assign stall = x_load & (d_DXRARD | (d_DXRBRD & ~d_store));
+	 assign stall = (x_load & (d_DXRARD | (d_DXRBRD & ~d_store))) | (x_store & d_load) | (m_store & d_load);
 
 	 
 	 
@@ -290,16 +290,21 @@ module processor(
 	 assign x_o = (multing) ? mult_out : alu_out;
 	 
 	 assign alu_out_stall = (mult_stall) ? 32'h0 : x_o;
-	 assign xm_bBypass_stall = (mult_stall) ? 32'h0 : xm_bBypass;
+	 assign xm_bBypass_stall = (mult_stall) ? 32'h0 : xm_bBypassTemp2;
 	 assign x_dataHazard_stall = (mult_stall) ? 1'b0 : x_dataHazard;
 	
 
+	 wire [31:0] xm_bBypassTemp1, xm_bBypassTemp2;
+	 
+	 assign xm_bBypassTemp1 = (x_MWRDRD & x_store) ? data_writeReg : x_b;
+	 assign xm_bBypassTemp2 = (x_XMRDRD & x_store) ? m_o : xm_bBypassTemp1;
+	
 	
 // X/M
 	 	 
 	 registerUnit XMInsn (clock, 1'b1, reset, x_insnStall, m_insn);
 	 registerUnit XMOut (clock, 1'b1, reset, alu_out_stall, m_o);
-	 registerUnit XMB   (clock, 1'b1, reset, x_b, m_b);
+	 registerUnit XMB   (clock, 1'b1, reset, xm_bBypass_stall, m_b);
 	 dflipflopReg nam1(m_dataHazard, x_dataHazard_stall, clock, 1'b1, reset);
 	 register12bit PCDadX (m_pc, x_pc, clock, 1'b1, reset);
 	 dflipflopReg Except (m_exception, (mult_exc & mult_rdy) | (alu_ovf & (x_rtype | x_addi)), clock, 1'b1, reset);
@@ -350,6 +355,7 @@ module processor(
 	 assign d_store 	= ~d_insn[31] & ~d_insn[30] &  d_insn[29] &  d_insn[28] &  d_insn[27];// 00111
 	 assign d_jr 		= ~d_insn[31] & ~d_insn[30] &  d_insn[29] & ~d_insn[28] & ~d_insn[27];// 00100
 	 assign d_bex 		=  d_insn[31] & ~d_insn[30] &  d_insn[29] &  d_insn[28] & ~d_insn[27];// 10110
+	 assign d_load 	= ~d_insn[31] &  d_insn[30] & ~d_insn[29] & ~d_insn[28] & ~d_insn[27];// 01000
 	 
 	 assign x_rtype 	= ~x_insn[31] & ~x_insn[30] & ~x_insn[29] & ~x_insn[28] & ~x_insn[27];// 00000
 	 assign x_load 	= ~x_insn[31] &  x_insn[30] & ~x_insn[29] & ~x_insn[28] & ~x_insn[27];// 01000
